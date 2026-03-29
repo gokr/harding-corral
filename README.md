@@ -11,6 +11,10 @@ Corral is a SQL-first data mapper and table gateway library for Harding. It keep
 - `sql{...}` templates with `$value` and `$(expression)` interpolation
 - SQLite-backed in-memory tests
 
+## Design
+
+The project design notes live in `CORRAL.md`.
+
 ## Installation
 
 ```bash
