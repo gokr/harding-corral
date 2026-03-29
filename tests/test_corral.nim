@@ -30,5 +30,13 @@ when defined(harding_corral) and defined(harding_sqlite):
       check output.contains("Grace")
       check output.contains("1400")
 
+    test "Corral can prefix fallback table names from the class name":
+      let cmd = "./harding external/corral/tests/sqlite_corral_prefix.hrd"
+      let (output, exitCode) = execCmdEx(cmd)
+      check exitCode == 0
+      check output.contains("appPlayer")
+      check output.contains("Ada")
+      check output.contains("1200")
+
 else:
   echo "Corral tests skipped (compile with -d:harding_corral -d:harding_sqlite)"

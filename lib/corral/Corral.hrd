@@ -6,7 +6,7 @@ Sql := Object derive: #().
 
 SqlTemplate := Object derive: #(sql, params).
 
-CorralConnection := Object derive: #(rawConnection).
+CorralConnection := Object derive: #(rawConnection, tablePrefix).
 
 CorralTable := Object derive: #(connection, modelClass, tableName).
 
@@ -46,6 +46,8 @@ Sql class>>buildTemplate: segments with: values [
 
 CorralConnection>>rawConnection [ ^ rawConnection ].
 CorralConnection>>rawConnection: aConnection [ rawConnection := aConnection. ^ self ].
+CorralConnection>>tablePrefix [ tablePrefix isNil ifTrue: [ ^ "" ]. ^ tablePrefix ].
+CorralConnection>>tablePrefix: aString [ tablePrefix := aString. ^ self ].
 
 CorralTable>>connection [ ^ connection ].
 CorralTable>>connection: aConnection [ connection := aConnection. ^ self ].
@@ -55,7 +57,15 @@ CorralTable>>tableName [ ^ tableName ].
 CorralTable>>tableName: aString [ tableName := aString. ^ self ].
 
 Corral class>>on: aConnection [
-  ^ CorralConnection wrap: aConnection
+  ^ CorralConnection on: aConnection prefix: ""
+].
+
+Corral class>>on: aConnection prefix: aPrefix [
+  ^ CorralConnection on: aConnection prefix: aPrefix
+].
+
+Corral class>>table: aModelClass on: aConnection prefix: aPrefix [
+  ^ CorralTable for: aModelClass on: (CorralConnection on: aConnection prefix: aPrefix)
 ].
 
 Corral class>>table: aModelClass on: aConnection [
@@ -67,9 +77,14 @@ Corral class>>mapResult: aResult as: aModelClass [
 ].
 
 CorralConnection class>>on: aConnection [
+  ^ self on: aConnection prefix: ""
+].
+
+CorralConnection class>>on: aConnection prefix: aPrefix [
   | conn |
   conn := self new.
   conn rawConnection: aConnection.
+  conn tablePrefix: aPrefix.
   ^ conn
 ].
 
@@ -146,19 +161,20 @@ CorralConnection>>getLastError [
 ].
 
 CorralTable class>>for: aModelClass on: aConnection [
-  | table |
+  | table wrappedConnection |
+  wrappedConnection := CorralConnection wrap: aConnection.
   table := self new.
-  table connection: (CorralConnection wrap: aConnection).
+  table connection: wrappedConnection.
   table modelClass: aModelClass.
-  table tableName: (self tableNameFor: aModelClass).
+  table tableName: (self tableNameFor: aModelClass on: wrappedConnection).
   ^ table
 ].
 
-CorralTable class>>tableNameFor: aModelClass [
+CorralTable class>>tableNameFor: aModelClass on: aConnection [
   (aModelClass respondsTo: #corralTableName) ifTrue: [
     ^ aModelClass corralTableName
   ].
-  ^ aModelClass name lowercase
+  ^ (aConnection tablePrefix) & (aModelClass name)
 ].
 
 CorralTable class>>joinSqlParts: parts withSeparator: separator [
