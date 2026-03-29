@@ -4,11 +4,24 @@ Corral := Object derive: #().
 
 Sql := Object derive: #().
 
+SqlIdentifier := Object derive: #(text).
+
 SqlTemplate := Object derive: #(sql, params).
 
 CorralConnection := Object derive: #(rawConnection, tablePrefix).
 
 CorralTable := Object derive: #(connection, modelClass, tableName).
+
+SqlIdentifier>>text [ ^ text ].
+SqlIdentifier>>text: aString [ text := aString. ^ self ].
+SqlIdentifier>>printString [ ^ "SqlIdentifier(" & text & ")" ].
+
+SqlIdentifier class>>text: aString [
+  | ident |
+  ident := self new.
+  ident text: aString.
+  ^ ident
+].
 
 SqlTemplate>>sql [ ^ sql ].
 SqlTemplate>>sql: aString [ sql := aString. ^ self ].
@@ -28,16 +41,75 @@ Sql class>>parseLiteral: content [
   ^ self buildTemplate: #(content) with: #()
 ].
 
+Sql class>>identifierHeadCharacters [
+  ^ "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+].
+
+Sql class>>identifierBodyCharacters [
+  ^ self identifierHeadCharacters & "0123456789"
+].
+
+Sql class>>isIdentifierHead: aCharacter [
+  ^ (self identifierHeadCharacters) includesSubString: aCharacter
+].
+
+Sql class>>isIdentifierBody: aCharacter [
+  ^ (self identifierBodyCharacters) includesSubString: aCharacter
+].
+
+Sql class>>isValidIdentifier: aString [
+  | text index currentChar segmentStart |
+  aString isNil ifTrue: [ ^ false ].
+  text := aString asString.
+  text isEmpty ifTrue: [ ^ false ].
+
+  index := 0.
+  segmentStart := true.
+  [ index < text size ] whileTrue: [
+    currentChar := text at: index.
+    (currentChar = ".") ifTrue: [
+      segmentStart ifTrue: [ ^ false ].
+      segmentStart := true
+    ] ifFalse: [
+      segmentStart ifTrue: [
+        (self isIdentifierHead: currentChar) ifFalse: [ ^ false ]
+      ] ifFalse: [
+        (self isIdentifierBody: currentChar) ifFalse: [ ^ false ]
+      ].
+      segmentStart := false
+    ].
+    index := index + 1
+  ].
+
+  ^ segmentStart not
+].
+
+Sql class>>ident: aName [
+  | identText |
+  identText := aName asString.
+  (self isValidIdentifier: identText) ifFalse: [
+    self error: ("Invalid SQL identifier: " & identText)
+  ].
+  ^ SqlIdentifier text: identText
+].
+
 Sql class>>buildTemplate: segments with: values [
-  | sqlText params index |
+  | sqlText params index value |
   sqlText := String withCapacity: 128.
   params := Array new.
   index := 0.
   [ index < segments size ] whileTrue: [
     sqlText << (segments at: index).
     (index < values size) ifTrue: [
-      sqlText << "?".
-      params add: (values at: index)
+      value := values at: index.
+      (value isKindOf: SqlIdentifier) ifTrue: [
+        sqlText << " ".
+        sqlText << (value text).
+        sqlText << " "
+      ] ifFalse: [
+        sqlText << "?".
+        params add: value
+      ]
     ].
     index := index + 1
   ].

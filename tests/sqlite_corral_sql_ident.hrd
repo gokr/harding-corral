@@ -1,0 +1,45 @@
+Harding load: "lib/corral/Bootstrap.hrd".
+
+Player := Object derive: #(id, name, score).
+Player>>id [ ^ id ].
+Player>>id: anId [ id := anId. ^ self ].
+Player>>name [ ^ name ].
+Player>>name: aName [ name := aName. ^ self ].
+Player>>score [ ^ score ].
+Player>>score: aScore [ score := aScore. ^ self ].
+
+Player class>>id: anId name: aName score: aScore [
+  | player |
+  player := self new.
+  player id: anId.
+  player name: aName.
+  player score: aScore.
+  ^ player
+].
+
+conn := Corral on: (SqliteConnection open: ":memory:").
+players := Corral table: Player on: conn prefix: "app".
+
+conn execute: sql{
+  CREATE TABLE $(Sql ident: players tableName) (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    score INTEGER
+  )
+}.
+
+players insert: (Player id: 1 name: "Ada" score: 1200).
+players insert: (Player id: 2 name: "Grace" score: 1337).
+
+resultRows := players query: sql{
+  SELECT $(Sql ident: #name), $(Sql ident: #score)
+  FROM $(Sql ident: players tableName)
+  WHERE $(Sql ident: #score) >= $(1200)
+  ORDER BY $(Sql ident: #id)
+} as: Player.
+
+resultRows size println.
+(resultRows first) name println.
+((resultRows first) score) println.
+
+conn close.

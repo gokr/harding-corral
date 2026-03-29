@@ -9,6 +9,7 @@ Corral is a SQL-first data mapper and table gateway library for Harding. It keep
 - row-to-object mapping using class metadata
 - `insert:`, `update:`, `upsert:`, `delete:` and `deleteId:`
 - `sql{...}` templates with `$value` and `$(expression)` interpolation
+- `Sql ident:` for explicit identifier interpolation inside `sql{...}`
 - configurable fallback table prefixes for class-name-based table naming
 - SQLite-backed in-memory tests
 
@@ -48,11 +49,12 @@ Player>>score [ ^ score ].
 Player>>score: aScore [ score := aScore. ^ self ].
 
 Player class>>id: anId name: aName score: aScore [
-  ^ self new
-    id: anId;
-    name: aName;
-    score: aScore;
-    yourself
+  | player |
+  player := self new.
+  player id: anId.
+  player name: aName.
+  player score: aScore.
+  ^ player
 ].
 
 conn := Corral on: (SqliteConnection open: ":memory:") prefix: "app".
@@ -79,6 +81,14 @@ topPlayers := players query: sql{
 } as: Player.
 
 (topPlayers first) name println.
+
+namedRows := players query: sql{
+  SELECT $(Sql ident: #name), $(Sql ident: #score)
+  FROM $(Sql ident: players tableName)
+  WHERE $(Sql ident: #score) >= $(1200)
+} as: Player.
+
+(namedRows first) name println.
 ```
 
 ## Testing

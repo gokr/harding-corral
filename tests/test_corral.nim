@@ -38,5 +38,13 @@ when defined(harding_corral) and defined(harding_sqlite):
       check output.contains("Ada")
       check output.contains("1200")
 
+    test "Corral supports explicit sql identifiers":
+      let cmd = "./harding external/corral/tests/sqlite_corral_sql_ident.hrd"
+      let (output, exitCode) = execCmdEx(cmd)
+      check exitCode == 0
+      check output.contains("2")
+      check output.contains("Ada")
+      check output.contains("1200")
+
 else:
   echo "Corral tests skipped (compile with -d:harding_corral -d:harding_sqlite)"
