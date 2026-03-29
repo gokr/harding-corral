@@ -1,0 +1,75 @@
+Harding load: "lib/corral/Bootstrap.hrd".
+
+Player := Object derive: #(id, name, score).
+Player class>>corralTableName [ ^ "players" ].
+Player class>>corralColumns [
+  | specs idSpec nameSpec scoreSpec |
+  specs := Table new.
+
+  idSpec := Table new.
+  idSpec at: #column put: "id".
+  idSpec at: #type put: #integer.
+  specs at: #id put: idSpec.
+
+  nameSpec := Table new.
+  nameSpec at: #column put: "name".
+  nameSpec at: #type put: #string.
+  specs at: #name put: nameSpec.
+
+  scoreSpec := Table new.
+  scoreSpec at: #column put: "score".
+  scoreSpec at: #type put: #integer.
+  specs at: #score put: scoreSpec.
+
+  ^ specs
+].
+
+conn := Corral on: (SqliteConnection open: ":memory:").
+players := Corral table: Player on: conn.
+
+conn execute: sql{
+  CREATE TABLE players (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    score INTEGER
+  )
+}.
+
+id1 := 1.
+name1 := "Ada".
+score1 := 1200.
+players execute: sql{
+  INSERT INTO players (id, name, score)
+  VALUES ($id1, $name1, $score1)
+}.
+
+id2 := 2.
+name2 := "Grace".
+score2 := 1337.
+players execute: sql{
+  INSERT INTO players (id, name, score)
+  VALUES ($id2, $name2, $(score2))
+}.
+
+inlineRows := players query: sql{SELECT * FROM players WHERE id = $id1} as: Player.
+((inlineRows first) slotAt: #name) println.
+
+threshold := 100.
+rows := players query: sql{
+  SELECT *
+  FROM players
+  WHERE score >= $(score1 + threshold)
+  ORDER BY id
+} as: Player.
+rows size println.
+(((rows first) slotAt: #name)) println.
+
+ada := players byId: 1.
+ada slotAt: #score put: 1400.
+players upsert: ada.
+((players byId: 1) slotAt: #score) println.
+
+players deleteId: 2.
+(players all size) println.
+
+conn close.

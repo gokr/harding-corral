@@ -1,0 +1,16 @@
+#!/usr/bin/env harding
+
+CorralLib := Harding at: "CorralLibrary" ifAbsent: [
+  | lib |
+  lib := Library name: "Corral"
+  Harding at: "CorralLibrary" put: lib
+  lib
+].
+CorralLib at: "__sourceDir" put: "lib/corral".
+
+(CorralLib at: "__initialized" ifAbsent: [ false ]) ifFalse: [
+  CorralLib load: "Corral.hrd".
+  CorralLib at: "__initialized" put: true
+].
+
+Harding import: CorralLib

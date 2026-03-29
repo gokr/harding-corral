@@ -1,0 +1,399 @@
+#!/usr/bin/env harding
+
+Corral := Object derive: #().
+
+Sql := Object derive: #().
+
+SqlTemplate := Object derive: #(sql, params).
+
+CorralConnection := Object derive: #(rawConnection).
+
+CorralTable := Object derive: #(connection, modelClass, tableName).
+
+SqlTemplate>>sql [ ^ sql ].
+SqlTemplate>>sql: aString [ sql := aString. ^ self ].
+SqlTemplate>>params [ ^ params ].
+SqlTemplate>>params: aCollection [ params := aCollection. ^ self ].
+SqlTemplate>>printString [ ^ "sql{" & sql & "}" ].
+
+SqlTemplate class>>sql: aString params: aCollection [
+  | template |
+  template := self new.
+  template sql: aString.
+  template params: aCollection.
+  ^ template
+].
+
+Sql class>>parseLiteral: content [
+  ^ self buildTemplate: #(content) with: #()
+].
+
+Sql class>>buildTemplate: segments with: values [
+  | sqlText params index |
+  sqlText := String withCapacity: 128.
+  params := Array new.
+  index := 0.
+  [ index < segments size ] whileTrue: [
+    sqlText << (segments at: index).
+    (index < values size) ifTrue: [
+      sqlText << "?".
+      params add: (values at: index)
+    ].
+    index := index + 1
+  ].
+  ^ SqlTemplate sql: sqlText params: params
+].
+
+CorralConnection>>rawConnection [ ^ rawConnection ].
+CorralConnection>>rawConnection: aConnection [ rawConnection := aConnection. ^ self ].
+
+CorralTable>>connection [ ^ connection ].
+CorralTable>>connection: aConnection [ connection := aConnection. ^ self ].
+CorralTable>>modelClass [ ^ modelClass ].
+CorralTable>>modelClass: aClass [ modelClass := aClass. ^ self ].
+CorralTable>>tableName [ ^ tableName ].
+CorralTable>>tableName: aString [ tableName := aString. ^ self ].
+
+Corral class>>on: aConnection [
+  ^ CorralConnection wrap: aConnection
+].
+
+Corral class>>table: aModelClass on: aConnection [
+  ^ CorralTable for: aModelClass on: aConnection
+].
+
+Corral class>>mapResult: aResult as: aModelClass [
+  ^ CorralTable mapResult: aResult as: aModelClass
+].
+
+CorralConnection class>>on: aConnection [
+  | conn |
+  conn := self new.
+  conn rawConnection: aConnection.
+  ^ conn
+].
+
+CorralConnection class>>wrap: aConnection [
+  (aConnection isKindOf: self) ifTrue: [ ^ aConnection ].
+  ^ self on: aConnection
+].
+
+CorralConnection>>query: aSql [
+  (aSql isKindOf: SqlTemplate) ifTrue: [
+    ^ self query: (aSql sql) with: (aSql params)
+  ].
+  ^ rawConnection query: aSql
+].
+
+CorralConnection>>query: aSql with: params [
+  (rawConnection respondsTo: #query:with:) ifTrue: [
+    ^ rawConnection query: aSql with: params
+  ].
+  (params size = 0) ifTrue: [ ^ rawConnection query: aSql ].
+  self error: "Underlying connection does not support query:with:"
+].
+
+CorralConnection>>query: aSql as: aModelClass [
+  ^ Corral mapResult: (self query: aSql) as: aModelClass
+].
+
+CorralConnection>>query: aSql with: params as: aModelClass [
+  ^ Corral mapResult: (self query: aSql with: params) as: aModelClass
+].
+
+CorralConnection>>execute: aSql [
+  (aSql isKindOf: SqlTemplate) ifTrue: [
+    ^ self execute: (aSql sql) with: (aSql params)
+  ].
+  ^ rawConnection execute: aSql
+].
+
+CorralConnection>>execute: aSql with: params [
+  (rawConnection respondsTo: #execute:with:) ifTrue: [
+    ^ rawConnection execute: aSql with: params
+  ].
+  (params size = 0) ifTrue: [ ^ rawConnection execute: aSql ].
+  self error: "Underlying connection does not support execute:with:"
+].
+
+CorralConnection>>transactionDo: aBlock [
+  (rawConnection respondsTo: #transactionDo:) ifTrue: [
+    ^ rawConnection transactionDo: aBlock
+  ].
+
+  self execute: "BEGIN".
+  ^ [
+    | result |
+    result := aBlock value.
+    self execute: "COMMIT".
+    result
+  ] on: Exception do: [:ex |
+    self execute: "ROLLBACK".
+    ex pass
+  ]
+].
+
+CorralConnection>>close [
+  ^ rawConnection close
+].
+
+CorralConnection>>isConnected [
+  ^ rawConnection isConnected
+].
+
+CorralConnection>>getLastError [
+  ^ rawConnection getLastError
+].
+
+CorralTable class>>for: aModelClass on: aConnection [
+  | table |
+  table := self new.
+  table connection: (CorralConnection wrap: aConnection).
+  table modelClass: aModelClass.
+  table tableName: (self tableNameFor: aModelClass).
+  ^ table
+].
+
+CorralTable class>>tableNameFor: aModelClass [
+  (aModelClass respondsTo: #corralTableName) ifTrue: [
+    ^ aModelClass corralTableName
+  ].
+  ^ aModelClass name lowercase
+].
+
+CorralTable class>>joinSqlParts: parts withSeparator: separator [
+  | result first |
+  result := "".
+  first := true.
+  parts do: [:part |
+    first ifFalse: [ result := result & separator ].
+    result := result & part.
+    first := false
+  ].
+  ^ result
+].
+
+CorralTable class>>columnSpecsFor: aModelClass [
+  | specs instance |
+  (aModelClass respondsTo: #corralColumns) ifTrue: [ ^ aModelClass corralColumns ].
+
+  specs := Table new.
+  instance := aModelClass new.
+  instance slotNames do: [:slotName |
+    | spec |
+    spec := Table new.
+    spec at: #column put: (slotName asString).
+    spec at: #type put: #string.
+    specs at: slotName put: spec
+  ].
+  ^ specs
+].
+
+CorralTable class>>specForSlot: slotName in: aModelClass [
+  | specs |
+  specs := self columnSpecsFor: aModelClass.
+  ^ specs at: slotName ifAbsent: [
+    specs at: (slotName asString) ifAbsent: [
+      specs at: (slotName asSymbol) ifAbsent: [
+        | spec |
+        spec := Table new.
+        spec at: #column put: (slotName asString).
+        spec at: #type put: #string.
+        spec
+      ]
+    ]
+  ]
+].
+
+CorralTable class>>slotNameForColumn: columnName in: aModelClass [
+  | specs found |
+  specs := self columnSpecsFor: aModelClass.
+  found := nil.
+  specs keys do: [:slotName |
+    | spec mappedColumn |
+    spec := specs at: slotName.
+    mappedColumn := spec at: #column ifAbsent: [ slotName asString ].
+    ((mappedColumn asString) = columnName) ifTrue: [ found := slotName ]
+  ].
+  ^ found
+].
+
+CorralTable class>>decodeValue: rawValue withSpec: spec [
+  | codec type lowered |
+  rawValue isNil ifTrue: [ ^ nil ].
+  ((rawValue isKindOf: String) and: [ rawValue isEmpty ]) ifTrue: [ ^ nil ].
+
+  codec := spec at: #codec ifAbsent: [ nil ].
+  codec notNil ifTrue: [
+    codec = #json ifTrue: [ ^ Json parse: rawValue ]
+  ].
+
+  type := spec at: #type ifAbsent: [ #string ].
+  type = #integer ifTrue: [ ^ rawValue asInteger ].
+  ((type = #float) | (type = #double) | (type = #decimal)) ifTrue: [ ^ rawValue asFloat ].
+  ((type = #boolean) | (type = #bool)) ifTrue: [
+    lowered := rawValue lowercase.
+    ^ (lowered = "1") | (lowered = "true") | (lowered = "yes")
+  ].
+  ^ rawValue
+].
+
+CorralTable class>>encodeValue: value withSpec: spec [
+  | codec |
+  value isNil ifTrue: [ ^ nil ].
+  codec := spec at: #codec ifAbsent: [ nil ].
+  codec notNil ifTrue: [
+    codec = #json ifTrue: [ ^ Json stringify: value ]
+  ].
+  ^ value
+].
+
+CorralTable class>>mapRow: row fields: fields as: aModelClass [
+  | obj index |
+  obj := aModelClass new.
+  index := 0.
+  [ index < fields size ] whileTrue: [
+    | columnName slotName spec rawValue |
+    columnName := fields at: index.
+    slotName := self slotNameForColumn: columnName in: aModelClass.
+    slotName notNil ifTrue: [
+      spec := self specForSlot: slotName in: aModelClass.
+      rawValue := row at: index.
+      obj slotAt: slotName put: (self decodeValue: rawValue withSpec: spec)
+    ].
+    index := index + 1
+  ].
+  ^ obj
+].
+
+CorralTable class>>mapResult: aResult as: aModelClass [
+  | mapped fields row |
+  mapped := Array new.
+  fields := aResult fields.
+  [ row := aResult next. row notNil ] whileTrue: [
+    mapped add: (self mapRow: row fields: fields as: aModelClass)
+  ].
+  aResult close.
+  ^ mapped
+].
+
+CorralTable>>query: aSql [
+  ^ connection query: aSql
+].
+
+CorralTable>>query: aSql with: params [
+  ^ connection query: aSql with: params
+].
+
+CorralTable>>query: aSql as: aModelClass [
+  ^ connection query: aSql as: aModelClass
+].
+
+CorralTable>>query: aSql with: params as: aModelClass [
+  ^ connection query: aSql with: params as: aModelClass
+].
+
+CorralTable>>execute: aSql [
+  ^ connection execute: aSql
+].
+
+CorralTable>>execute: aSql with: params [
+  ^ connection execute: aSql with: params
+].
+
+CorralTable>>transactionDo: aBlock [
+  ^ connection transactionDo: aBlock
+].
+
+CorralTable>>all [
+  ^ self query: ("SELECT * FROM " & tableName) as: modelClass
+].
+
+CorralTable>>byId: anId [
+  | params |
+  params := Array new.
+  params add: anId.
+  ^ self firstWhereSql: "id = ?" with: params
+].
+
+CorralTable>>whereSql: whereSql [
+  ^ self whereSql: whereSql with: #()
+].
+
+CorralTable>>whereSql: whereSql with: params [
+  ^ self query: ("SELECT * FROM " & tableName & " WHERE " & whereSql) with: params as: modelClass
+].
+
+CorralTable>>firstWhereSql: whereSql [
+  ^ self firstWhereSql: whereSql with: #()
+].
+
+CorralTable>>firstWhereSql: whereSql with: params [
+  | rows |
+  rows := self whereSql: whereSql with: params.
+  rows isEmpty ifTrue: [ ^ nil ].
+  ^ rows first
+].
+
+CorralTable>>deleteId: anId [
+  | params |
+  params := Array new.
+  params add: anId.
+  ^ self execute: ("DELETE FROM " & tableName & " WHERE id = ?") with: params
+].
+
+CorralTable>>delete: anObject [
+  ^ self deleteId: (anObject slotAt: #id)
+].
+
+CorralTable>>insert: anObject [
+  | columns params placeholders query |
+  columns := Array new.
+  params := Array new.
+  placeholders := Array new.
+
+  anObject slotNames do: [:slotName |
+    | spec value isAuto |
+    spec := self class specForSlot: slotName in: modelClass.
+    isAuto := spec at: #auto ifAbsent: [ false ].
+    value := anObject slotAt: slotName.
+    (isAuto and: [ value isNil | (value = 0) ]) ifFalse: [
+      columns add: (spec at: #column ifAbsent: [ slotName asString ]).
+      placeholders add: "?".
+      params add: (self class encodeValue: value withSpec: spec)
+    ]
+  ].
+
+  query := "INSERT INTO " & tableName & " (" & (self class joinSqlParts: columns withSeparator: ", ") & ") VALUES (" & (self class joinSqlParts: placeholders withSeparator: ", ") & ")".
+  ^ self execute: query with: params
+].
+
+CorralTable>>update: anObject [
+  | assignments params query idValue |
+  assignments := Array new.
+  params := Array new.
+  idValue := anObject slotAt: #id.
+
+  anObject slotNames do: [:slotName |
+    | spec value |
+    slotName = #id ifFalse: [
+      spec := self class specForSlot: slotName in: modelClass.
+      value := anObject slotAt: slotName.
+      assignments add: ((spec at: #column ifAbsent: [ slotName asString ]) & " = ?").
+      params add: (self class encodeValue: value withSpec: spec)
+    ]
+  ].
+
+  params add: idValue.
+  query := "UPDATE " & tableName & " SET " & (self class joinSqlParts: assignments withSeparator: ", ") & " WHERE id = ?".
+  ^ self execute: query with: params
+].
+
+CorralTable>>upsert: anObject [
+  | idValue existing |
+  idValue := anObject slotAt: #id.
+  idValue isNil ifTrue: [ ^ self insert: anObject ].
+  existing := self byId: idValue.
+  existing isNil ifTrue: [ ^ self insert: anObject ].
+  ^ self update: anObject
+].

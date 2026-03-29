@@ -1,0 +1,12 @@
+{
+  "name": "corral",
+  "version": "0.1.0",
+  "installedAt": "2026-03-29T00:00:00Z",
+  "source": "https://github.com/gokr/harding-corral.git",
+  "commit": "main",
+  "description": "SQL-first data mapper and table gateway library for Harding",
+  "author": "Harding Team",
+  "requires": [
+    "nim == 2.2.6"
+  ]
+}

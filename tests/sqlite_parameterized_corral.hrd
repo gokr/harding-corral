@@ -1,0 +1,26 @@
+Harding load: "lib/corral/Bootstrap.hrd".
+
+Player := Object derive: #(id, name, score).
+Player class>>corralTableName [ ^ "players" ].
+
+conn := Corral on: (SqliteConnection open: ":memory:").
+players := Corral table: Player on: conn.
+
+conn execute: "CREATE TABLE players (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, score INTEGER)".
+
+conn transactionDo: [
+  players execute: "INSERT INTO players (name, score) VALUES (?, ?)" with: #("Ada", 1200).
+  players execute: "INSERT INTO players (name, score) VALUES (?, ?)" with: #("Grace", 1337)
+].
+
+result := players query: "SELECT name, score FROM players WHERE score > ?" with: #(1200).
+result rowCount println.
+fields := result fields.
+(fields at: 0) println.
+(fields at: 1) println.
+
+row := result next.
+((row at: 0) & ":" & (row at: 1)) println.
+
+result close.
+conn close.

@@ -1,0 +1,67 @@
+Harding load: "lib/corral/Bootstrap.hrd".
+
+Player := Object derive: #(id, name, score, meta).
+Player class>>corralTableName [ ^ "players" ].
+Player class>>corralColumns [
+  | specs idSpec nameSpec scoreSpec metaSpec |
+  specs := Table new.
+
+  idSpec := Table new.
+  idSpec at: #column put: "id".
+  idSpec at: #type put: #integer.
+  specs at: #id put: idSpec.
+
+  nameSpec := Table new.
+  nameSpec at: #column put: "name".
+  nameSpec at: #type put: #string.
+  specs at: #name put: nameSpec.
+
+  scoreSpec := Table new.
+  scoreSpec at: #column put: "score".
+  scoreSpec at: #type put: #integer.
+  specs at: #score put: scoreSpec.
+
+  metaSpec := Table new.
+  metaSpec at: #column put: "meta".
+  metaSpec at: #codec put: #json.
+  specs at: #meta put: metaSpec.
+
+  ^ specs
+].
+
+conn := Corral on: (SqliteConnection open: ":memory:").
+players := Corral table: Player on: conn.
+
+conn execute: "CREATE TABLE players (id INTEGER PRIMARY KEY, name TEXT, score INTEGER, meta TEXT)".
+
+ada := Player new.
+adaMeta := Table new.
+adaMeta at: "role" put: "admin".
+ada slotAt: #id put: 1.
+ada slotAt: #name put: "Ada".
+ada slotAt: #score put: 1200.
+ada slotAt: #meta put: adaMeta.
+players insert: ada.
+
+grace := Player new.
+graceMeta := Table new.
+graceMeta at: "role" put: "captain".
+grace slotAt: #id put: 2.
+grace slotAt: #name put: "Grace".
+grace slotAt: #score put: 1337.
+grace slotAt: #meta put: graceMeta.
+players insert: grace.
+
+found := players byId: 1.
+(found slotAt: #name) println.
+((found slotAt: #score) + 1) println.
+(((found slotAt: #meta) at: "role")) println.
+
+found slotAt: #score put: 1400.
+players update: found.
+
+updated := players byId: 1.
+(updated slotAt: #score) println.
+(players all size) println.
+
+conn close.

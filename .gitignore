@@ -1,0 +1,13 @@
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.obj
+*.a
+*.lib
+nimcache/
+tests/*
+!tests/*.hrd
+!tests/*.md
+!tests/*.nim
